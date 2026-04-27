@@ -1,36 +1,170 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Deploy Next.js App on AWS EC2 (Full Guide)
 
-## Getting Started
+## Goal
+Run Next.js app on EC2 so that:
+Opening EC2 Public IP shows website (without :3000)
 
-First, run the development server:
+---
+
+## 1. EC2 Setup
+- Launch EC2 instance (Amazon Linux 2023 / Ubuntu)
+- Instance type: t2.micro (free tier ok)
+- Download `.pem` key file
+
+---
+
+## 2. Security Group Configuration
+
+Go to:
+EC2 -> Security Groups -> Inbound Rules
+
+### Required Rules
+
+#### 1. SSH (Login)
+- Type: SSH
+- Port: 22
+- Source: My IP (recommended) OR 0.0.0.0/0
+
+---
+
+#### 2. HTTP (Website Access) IMPORTANT
+- Type: HTTP
+- Port: 80
+- Source: 0.0.0.0/0
+
+This enables:
+http://EC2-PUBLIC-IP
+
+---
+
+#### 3. (Optional) Next.js Dev Port
+- Type: Custom TCP
+- Port: 3000
+- Source: 0.0.0.0/0
+
+Only for testing:
+http://EC2-PUBLIC-IP:3000
+
+---
+
+#### 4. (Future) HTTPS
+- Type: HTTPS
+- Port: 443
+- Source: 0.0.0.0/0
+
+---
+
+## 3. SSH into EC2
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+ssh -i your-key.pem ec2-user@your-ec2-public-ip
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 4. Install Dependencies
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Update system:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+sudo dnf update -y
+```
 
-## Learn More
+Install Git:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+sudo dnf install git -y
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Install Node.js:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+sudo dnf install nodejs -y
+```
 
-## Deploy on Vercel
+Check versions:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+node -v
+npm -v
+git --version
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 5. Clone GitHub Repo
+
+```bash
+git clone https://github.com/your-username/your-nextjs-repo.git
+cd your-nextjs-repo
+```
+
+## 6. Install Project Dependencies
+
+```bash
+npm install
+```
+
+## 7. Build Next.js App
+
+```bash
+npm run build
+```
+
+## 8. Run App (Production Mode)
+
+```bash
+npm start
+```
+
+OR using PM2 (recommended):
+
+```bash
+npm install -g pm2
+pm2 start npm --name "nextjs-app" -- start
+```
+
+## 9. Install Nginx (Reverse Proxy)
+
+```bash
+sudo dnf install nginx -y
+sudo systemctl start nginx
+sudo systemctl enable nginx
+```
+
+## 10. Configure Nginx
+
+```bash
+sudo nano /etc/nginx/nginx.conf
+```
+
+Replace server block with:
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+```
+
+## 11. Restart Nginx
+
+```bash
+sudo systemctl restart nginx
+```
+
+## Final Result
+
+Now open in browser:
+
+http://EC2-PUBLIC-IP
+
+- No port required
+- Fully working Next.js app
+- Production ready setup
