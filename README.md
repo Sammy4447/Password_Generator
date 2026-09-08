@@ -1,16 +1,15 @@
 # Deploy a Next.js App on AWS EC2 (Full Guide)
 
-**Goal:** open the EC2 public IP in a browser and see the site — no `:3000` in the URL.
+**Goal:** open the EC2 public IP in a browser and see the site — no port number in the URL.
 
 ```
-Browser  →  :80 Nginx  →  static files (or Node on :3000)
+Browser  →  :80 Nginx  →  static files in /var/www/app
 ```
 
-> **Which path do you need?**
-> - `next.config.ts` has `output: "export"` → the build produces a static `out/` folder.
->   Nginx serves those files directly. **This project uses this path.** → [Path A](#path-a--static-export-recommended-here)
-> - No `output: "export"` → you need a running Node server and Nginx as a reverse proxy.
->   → [Path B](#path-b--node-server--reverse-proxy)
+> This guide covers a **static export** deployment: `next.config.ts` sets
+> `output: "export"`, so `npm run build` produces a plain `out/` folder of HTML/CSS/JS
+> that Nginx serves directly. No Node process runs on the server, and `npm start`
+> (`next start`) is not used.
 
 ---
 
@@ -30,8 +29,7 @@ Browser  →  :80 Nginx  →  static files (or Node on :3000)
 |---|---------|------|------|--------|-------|
 | 1 | SSH login | SSH | 22 | My IP | `0.0.0.0/0` works but is less safe |
 | 2 | **Website** | HTTP | 80 | `0.0.0.0/0` | **Required** — this is what makes `http://IP` work |
-| 3 | Dev testing (optional) | Custom TCP | 3000 | `0.0.0.0/0` | Only to test `http://IP:3000`; remove later |
-| 4 | HTTPS (future) | HTTPS | 443 | `0.0.0.0/0` | For Certbot / SSL |
+| 3 | HTTPS (future) | HTTPS | 443 | `0.0.0.0/0` | For Certbot / SSL |
 
 ---
 
@@ -114,14 +112,15 @@ npm install
 npm run build
 ```
 
-- With `output: "export"` → output is in `./out` → continue with **Path A**
-- Without it → `.next` build for a Node server → continue with **Path B**
+The build output lands in `./out`. Check it exists before moving on:
+
+```bash
+ls out/index.html
+```
 
 ---
 
-## Path A — Static Export (recommended here)
-
-### A1. Copy the build to a web root
+## 6. Copy the Build to a Web Root
 
 ```bash
 sudo mkdir -p /var/www/app
@@ -130,7 +129,9 @@ sudo chown -R nginx:nginx /var/www/app
 sudo chmod -R 755 /var/www
 ```
 
-### A2. Nginx config
+---
+
+## 7. Configure Nginx
 
 ```bash
 sudo nano /etc/nginx/conf.d/app.conf
@@ -150,7 +151,9 @@ server {
 }
 ```
 
-### A3. Disable the default Nginx site
+---
+
+## 8. Disable the Default Nginx Site
 
 Nginx ships with its own `server` block on port 80 (the "Welcome to nginx!" page) inside
 `/etc/nginx/nginx.conf`. Two blocks on the same port conflict, and the built-in one wins —
@@ -232,7 +235,9 @@ This works only if the built-in block does **not** also say `default_server` —
 Nginx refuses to start with `duplicate default server`, and you're back to commenting it out.
 </details>
 
-### A4. Start Nginx
+---
+
+## 9. Start Nginx
 
 ```bash
 sudo nginx -t                      # config must say "syntax is ok"
@@ -240,7 +245,9 @@ sudo systemctl enable --now nginx
 sudo systemctl restart nginx
 ```
 
-### A5. Redeploy after a code change
+---
+
+## 10. Redeploy After a Code Change
 
 ```bash
 cd ~/Password_Generator
@@ -256,70 +263,7 @@ No Nginx restart needed — the files are read on every request.
 
 ---
 
-## Path B — Node Server + Reverse Proxy
-
-Use this only when `output: "export"` is **not** set. (`next start` fails on a static export build.)
-
-### B1. Run the app with PM2
-
-```bash
-sudo npm install -g pm2
-pm2 start npm --name "nextjs-app" -- start
-pm2 startup          # run the command it prints
-pm2 save             # survives reboot
-```
-
-Useful commands: `pm2 logs`, `pm2 restart nextjs-app`, `pm2 status`
-
-### B2. Nginx reverse proxy
-
-```bash
-sudo nano /etc/nginx/conf.d/app.conf
-```
-
-```nginx
-server {
-    listen 80;
-    server_name _;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
-```
-
-Then disable the built-in default server block exactly as described in
-[step A3](#a3-disable-the-default-nginx-site) — otherwise Nginx keeps showing its welcome
-page instead of proxying to your app. Then:
-
-```bash
-sudo nginx -t
-sudo systemctl enable --now nginx
-sudo systemctl restart nginx
-```
-
-### B3. Redeploy after a code change
-
-```bash
-cd ~/Password_Generator
-git pull
-npm install
-npm run build
-pm2 restart nextjs-app
-```
-
----
-
-## 6. Result
+## 11. Result
 
 Open in a browser:
 
@@ -327,13 +271,13 @@ Open in a browser:
 http://<ec2-public-ip>
 ```
 
-- No port number needed
-- Nginx on port 80 is the entry point
-- Production-ready setup
+- No port number needed — Nginx on port 80 is the entry point
+- Pure static files: no Node process, nothing to crash or restart
+- Survives reboot thanks to `systemctl enable`
 
 ---
 
-## 7. (Optional) HTTPS with a Free SSL Certificate
+## 12. (Optional) HTTPS with a Free SSL Certificate
 
 Needs a domain pointed at the EC2 IP (A record) and port 443 open.
 
@@ -350,20 +294,19 @@ sudo systemctl enable --now certbot-renew.timer
 | Problem | Cause / Fix |
 |---------|-------------|
 | Browser just spins, then times out | Port 80 missing in the security group inbound rules |
-| **502 Bad Gateway** | App isn't running on :3000 → `pm2 status`, `pm2 logs` |
 | **403 Forbidden** | Wrong permissions on the web root → `sudo chown -R nginx:nginx /var/www/app` |
-| Nginx welcome page shows instead of the site | Built-in `server` block in `nginx.conf` still active — see [A3](#a3-disable-the-default-nginx-site) |
+| Nginx welcome page shows instead of the site | Built-in `server` block in `nginx.conf` still active — see [step 8](#8-disable-the-default-nginx-site) |
 | `nginx: [emerg] duplicate default server for 0.0.0.0:80` | Two blocks marked `default_server` — keep only one |
 | `nginx: [emerg] ... conflicting server name` | Two `server` blocks on port 80 — keep only one |
-| `next start` errors out | The build used `output: "export"` → use Path A, not Path B |
 | `Node.js version >= v20.9.0 is required` on `npm run build` | Node 18 installed — see [step 4](#4-install-dependencies), install `nodejs20` |
 | Build killed / out of memory on `t2.micro` | Add swap: `sudo dd if=/dev/zero of=/swapfile bs=1M count=2048 && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile` |
-| Site works on `:3000` but not on `:80` | Nginx not running or not restarted → `sudo systemctl status nginx` |
+| **404** on every page | Wrong `root` path, or `out/` was copied one level too deep → `ls /var/www/app/index.html` |
+| Old version still showing after redeploy | Browser cache → hard refresh (`Ctrl+Shift+R`) |
 
 Handy log commands:
 
 ```bash
 sudo tail -f /var/log/nginx/error.log
+sudo tail -f /var/log/nginx/access.log
 sudo systemctl status nginx
-pm2 logs
 ```
