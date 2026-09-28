@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PassForge — Secure Password Generator",
+  title: "Password_Master — Secure Password Generator",
   description:
     "Generate strong, secure, and customizable passwords instantly. Protect your accounts with cryptographically random passwords.",
   keywords: ["password generator", "secure password", "random password", "strong password"],
