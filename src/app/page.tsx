@@ -248,7 +248,7 @@ export default function PasswordGenerator() {
       {/* Header */}
       <header className="header">
         <div className="header-icon" aria-hidden="true">🔐</div>
-        <h1>Password Master</h1>
+        <h1>Password_forge</h1>
         <p>Generate cryptographically secure passwords</p>
       </header>
 
